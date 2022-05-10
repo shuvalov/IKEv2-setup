@@ -302,7 +302,7 @@ echo
 echo "--- Creating configuration files ---"
 echo
 
-cd "/home/root"
+cd "/root"
 
 cat << EOF > vpn-ios-or-mac.mobileconfig
 <?xml version='1.0' encoding='UTF-8'?>
