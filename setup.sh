@@ -93,33 +93,6 @@ echo
 read -r -p "Timezone (default: Europe/London): " TZONE
 TZONE=${TZONE:-'Europe/London'}
 
-# read -r -p "Email address for sysadmin (e.g. j.bloggs@example.com): " EMAILADDR
-
-# read -r -p "Desired SSH log-in port (default: 22): " SSHPORT
-# SSHPORT=${SSHPORT:-22}
-
-# read -r -p "New SSH log-in user name: " LOGINUSERNAME
-
-# CERTLOGIN="n"
-# if [[ -s /root/.ssh/authorized_keys ]]; then
-#  while true; do
-#    read -r -p "Copy /root/.ssh/authorized_keys to new user and disable SSH password log-in [Y/n]? " CERTLOGIN
-#    [[ ${CERTLOGIN,,} =~ ^(y(es)?)?$ ]] && CERTLOGIN=y
-#    [[ ${CERTLOGIN,,} =~ ^no?$ ]] && CERTLOGIN=n
-#    [[ $CERTLOGIN =~ ^(y|n)$ ]] && break
-#  done
-#fi
-
-# while true; do
-#  [[ ${CERTLOGIN} = "y" ]] && read -r -s -p "New SSH user's password (e.g. for sudo): " LOGINPASSWORD
-#  [[ ${CERTLOGIN} != "y" ]] && read -r -s -p "New SSH user's log-in password (must be REALLY STRONG): " LOGINPASSWORD
-#  echo
-#  read -r -s -p "Confirm new SSH user's password: " LOGINPASSWORD2
-#  echo
-#  [[ "${LOGINPASSWORD}" = "${LOGINPASSWORD2}" ]] && break
-#  echo "Passwords didn't match -- please try again"
-#done
-
 VPNIPPOOL="10.101.0.0/16"
 
 
@@ -130,10 +103,6 @@ echo
 apt-get -o Acquire::ForceIPv4=true --with-new-pkgs upgrade -y
 apt autoremove -y
 
-# debconf-set-selections <<< "postfix postfix/mailname string ${VPNHOST}"
-# debconf-set-selections <<< "postfix postfix/main_mailer_type string 'Internet Site'"
-
-#apt-get -o Acquire::ForceIPv4=true install -y language-pack-en strongswan libstrongswan-standard-plugins strongswan-libcharon libcharon-standard-plugins libcharon-extra-plugins  iptables-persistent postfix mutt unattended-upgrades certbot uuid-runtime
 apt-get -o Acquire::ForceIPv4=true install -y language-pack-en strongswan libstrongswan-standard-plugins strongswan-libcharon libcharon-standard-plugins libcharon-extra-plugins  iptables-persistent unattended-upgrades certbot uuid-runtime
 
 
@@ -290,17 +259,6 @@ ${VPNUSERNAME} : EAP \"${VPNPASSWORD}\"
 
 ipsec restart
 
-
-#echo
-#echo "--- User ---"
-#echo
-
-# user + SSH
-
-#id -u "${LOGINUSERNAME}" &>/dev/null || adduser --disabled-password --gecos "" "${LOGINUSERNAME}"
-#echo "${LOGINUSERNAME}:${LOGINPASSWORD}" | chpasswd
-#adduser "${LOGINUSERNAME}" sudo
-
 sed -r \
 -e "s/^#?Port 22$/Port ${SSHPORT}/" \
 -e 's/^#?LoginGraceTime (120|2m)$/LoginGraceTime 30/' \
@@ -315,49 +273,18 @@ MaxStartups 1
 MaxAuthTries 2
 UseDNS no" >> /etc/ssh/sshd_config
 
-if [[ $CERTLOGIN = "y" ]]; then
-  mkdir -p "/home/${LOGINUSERNAME}/.ssh"
-  chown "${LOGINUSERNAME}" "/home/${LOGINUSERNAME}/.ssh"
-  chmod 700 "/home/${LOGINUSERNAME}/.ssh"
-
-  cp "/root/.ssh/authorized_keys" "/home/${LOGINUSERNAME}/.ssh/authorized_keys"
-  chown "${LOGINUSERNAME}" "/home/${LOGINUSERNAME}/.ssh/authorized_keys"
-  chmod 600 "/home/${LOGINUSERNAME}/.ssh/authorized_keys"
-
-  sed -r \
-  -e "s/^#?PasswordAuthentication yes$/PasswordAuthentication no/" \
-  -i.allows_pwd /etc/ssh/sshd_config
-fi
-
 service ssh restart
 
 
 echo
-echo "--- Timezone, mail, unattended upgrades ---"
+echo "--- Timezone, unattended upgrades ---"
 echo
 
 timedatectl set-timezone "${TZONE}"
 /usr/sbin/update-locale LANG=en_GB.UTF-8
 
-
-sed -r \
--e "s/^myhostname =.*$/myhostname = ${VPNHOST}/" \
--e 's/^inet_interfaces =.*$/inet_interfaces = loopback-only/' \
--i.original /etc/postfix/main.cf
-
-grep -Fq 'jawj/IKEv2-setup' /etc/aliases || echo "
-# https://github.com/jawj/IKEv2-setup
-root: ${EMAILADDR}
-${LOGINUSERNAME}: ${EMAILADDR}
-" >> /etc/aliases
-
-newaliases
-service postfix restart
-
-
 sed -r \
 -e 's|^//Unattended-Upgrade::MinimalSteps "true";$|Unattended-Upgrade::MinimalSteps "true";|' \
--e 's|^//Unattended-Upgrade::Mail "root";$|Unattended-Upgrade::Mail "root";|' \
 -e 's|^//Unattended-Upgrade::Automatic-Reboot "false";$|Unattended-Upgrade::Automatic-Reboot "true";|' \
 -e 's|^//Unattended-Upgrade::Remove-Unused-Dependencies "false";|Unattended-Upgrade::Remove-Unused-Dependencies "true";|' \
 -e 's|^//Unattended-Upgrade::Automatic-Reboot-Time "02:00";$|Unattended-Upgrade::Automatic-Reboot-Time "03:00";|' \
@@ -375,7 +302,7 @@ echo
 echo "--- Creating configuration files ---"
 echo
 
-cd "/home/${LOGINUSERNAME}"
+cd "/home/root"
 
 cat << EOF > vpn-ios-or-mac.mobileconfig
 <?xml version='1.0' encoding='UTF-8'?>
@@ -615,13 +542,6 @@ For a persistent connection, go to your device's Settings app and choose Network
 A bash script to set up strongSwan as a VPN client is attached as vpn-ubuntu-client.sh. You will need to chmod +x and then run the script as root.
 
 EOF
-
-EMAIL=$USER@$VPNHOST mutt -s "VPN configuration" -a vpn-ios-or-mac.mobileconfig vpn-android.sswan vpn-ubuntu-client.sh -- "${EMAILADDR}" < vpn-instructions.txt
-
-echo
-echo "--- How to connect ---"
-echo
-echo "Connection instructions have been emailed to you, and can also be found in your home directory, /home/${LOGINUSERNAME}"
 
 # necessary for IKEv2?
 # Windows: https://support.microsoft.com/en-us/kb/926179
